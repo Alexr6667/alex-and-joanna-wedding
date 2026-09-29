@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Placeholder palette only. The visual design pass replaces this. */
+@theme {
+  --color-paper: #fbf8f3;
+  --color-ink: #24211d;
+  --color-muted: #6b645b;
+  --color-line: #ddd5c9;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
