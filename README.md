@@ -25,56 +25,93 @@ Stack: Next.js 16 (App Router), TypeScript, Tailwind CSS 4, Neon Postgres, Neon 
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in real values, see below
-npm run db:migrate
+npm i -g neon@latest && neon auth                                    # Neon CLI, once per machine
+neon link --project-id wild-cloud-37283675 --branch development -y   # writes .neon and pulls Neon vars into .env.local
+# add NEON_AUTH_COOKIE_SECRET and ADMIN_EMAILS to .env.local, see below
+DATABASE_URL="$(grep '^DATABASE_URL_UNPOOLED=' .env.local | cut -d= -f2-)" npm run db:migrate
 npm run dev                  # http://localhost:3000
 ```
+
+Local development always uses the Neon `development` branch. Never link your working copy to `production`.
 
 The app refuses to build or start if any required variable is missing or malformed. The error names the variable but never prints its value.
 
 ## Environment variables
 
-All four are required everywhere.
+The app requires four variables everywhere. Two come from Neon, two you set yourself.
 
-| Variable | Where to get it |
+| Variable | Source |
 | --- | --- |
-| `DATABASE_URL` | Neon Console > your branch > Connect. Pooled connection string. |
-| `NEON_AUTH_BASE_URL` | Neon Console > your branch > Auth > Configuration. Must be the Auth URL of the same branch as `DATABASE_URL`. |
-| `NEON_AUTH_COOKIE_SECRET` | `openssl rand -base64 32`. At least 32 characters. |
-| `ADMIN_EMAILS` | Comma-separated admin emails, for example `first@example.com,second@example.com`. Case-insensitive. |
+| `DATABASE_URL` | Neon. Pooled connection string for the branch. Written by `neon env pull` / `neon link`. |
+| `NEON_AUTH_BASE_URL` | Neon. Auth URL of the same branch as `DATABASE_URL`. Written by `neon env pull` / `neon link`. |
+| `NEON_AUTH_COOKIE_SECRET` | You. `openssl rand -base64 32`. At least 32 characters. Neon does not provide it. |
+| `ADMIN_EMAILS` | You. Comma-separated admin emails, for example `first@example.com,second@example.com`. Case-insensitive. |
 
-Neon Auth data lives in each database branch, so each environment pairs one branch's `DATABASE_URL` with the same branch's `NEON_AUTH_BASE_URL`:
+`neon env pull` also writes `DATABASE_URL_UNPOOLED` (direct connection, used for migrations), `NEON_BRANCH` and `NEON_AUTH_JWKS_URL`. The app ignores them at runtime. `neon env pull` only rewrites Neon's own variables, so the two you add to `.env.local` survive a re-pull.
 
-| Environment | Neon branch | Cookie secret |
+### Neon branches and environments
+
+The Neon project is `wild-cloud-37283675` (`alex-and-joanna-wedding`, AWS eu-west-2). It has exactly two branches:
+
+| Neon branch | Used by | Data |
 | --- | --- | --- |
-| Local `.env.local` | a development branch (for example `dev`) | its own random value |
-| Vercel Development (used by `vercel env pull` / `vercel dev`) | the same development branch | its own random value |
-| Vercel Preview | a separate `preview` branch | its own random value |
-| Vercel Production | the default branch (`main`) | its own random value |
+| `development` | local `.env.local`, Vercel Development, Vercel Preview | test data only |
+| `production` (default) | Vercel Production only | real guest data |
 
-`ADMIN_EMAILS` is the same list in every environment unless you want to test with other addresses on a dev branch.
+There is no separate preview branch, and Vercel's per-preview-deployment branching stays off. Neon Auth data (users, sessions, settings) lives in each branch's `neon_auth` schema, so every environment pairs one branch's `DATABASE_URL` with the same branch's `NEON_AUTH_BASE_URL`.
+
+`ADMIN_EMAILS` is the same list in every environment unless you want to test with other addresses on `development`.
 
 No variable is exposed to the browser. None use the `NEXT_PUBLIC_` prefix, and database and auth modules import `server-only`, so importing them from a client component fails the build.
 
-## Neon setup (manual, in the Neon Console)
+## Neon setup
 
-1. Create a Neon project. Pick a region close to your Vercel region.
-2. Create the branches you need (`dev`, `preview`). The default branch is production.
-3. On each branch, open **Auth** and click **Enable Auth**. Copy the Auth URL from the **Configuration** tab into that environment's `NEON_AUTH_BASE_URL`.
-4. On each branch, go to **Auth > Plugins** and turn on **Magic Link**.
-   - **Link Expiration**: the default is 5 minutes. 10 to 15 is more forgiving for email delays.
-   - **Allow New User Registration**: leave on so an admin's first sign-in creates their account. The app only asks Neon to send links to allowlisted addresses (see below).
-5. Turn off email and password authentication. This app never uses passwords, and leaving it on lets someone register a password account for an admin's address before the admin signs in for the first time. Turn it off in the branch's Auth settings in the Console, or through the `email_and_password` endpoint of the Neon API.
-6. Under **Auth > Configuration > Domains**, add the production origin (for example `https://example.com`) on the production branch. On the preview branch, add a wildcard for Vercel previews (for example `https://*-your-team.vercel.app`). Localhost is pre-approved.
-7. Set the **Application Name** (Auth > Configuration > Project Info). It appears in sign-in emails.
-8. On the production branch, turn off **Allow Localhost** (Settings > Auth).
+### Services (`neon.ts`, applied with the Neon CLI)
+
+`neon.ts` declares the Neon services every branch should have. Today that is only Neon Auth (`auth: true`). It uses `@neon/config`, which `neon config init` installs. `@neon/env` comes with it but the app does not use it. The app validates its own env in `lib/env/schema.ts`.
+
+To apply it to a branch, link that branch, check the plan, then deploy:
+
+```bash
+neon link --project-id wild-cloud-37283675 --branch <development|production> -y --no-env-pull
+neon config plan     # dry run. Stop if it deletes or replaces anything.
+neon deploy --no-env-pull
+neon link --project-id wild-cloud-37283675 --branch development -y --no-env-pull   # always relink to development afterwards
+```
+
+Pass `--no-env-pull` whenever production is linked. Otherwise the CLI writes production credentials into `.env.local`.
+
+`neon.ts` does not cover sign-in methods, trusted domains or email settings. Set those per branch as below.
+
+### Auth settings per branch
+
+`neon.ts` turns Neon Auth on, but sign-in methods, trusted domains and email are separate settings on each branch, in the Neon Console under the branch's **Auth** pages. (The CLI and API cover some of them: `neon neon-auth ...` and `neon api /projects/{id}/branches/{id}/auth/...`.)
+
+| Setting | `development` | `production` |
+| --- | --- | --- |
+| Magic Link plugin | on (done) | **turn on** |
+| Magic link expiry | 5 min (Neon default) | 5 min default. 10 to 15 is more forgiving for email delays. |
+| Magic link "Allow New User Registration" | on, so an admin's first sign-in creates their account | on |
+| Email and password | off (done) | **turn off** |
+| Google sign-in (Neon's shared OAuth app, on by default) | on. Turn off. | on. **Turn off.** |
+| Trusted domains | localhost is allowed. Add the Vercel preview wildcard (for example `https://*-your-team.vercel.app`) before using Vercel Preview. | **Add the production origin only** (for example `https://example.com`). No preview wildcard. |
+| Allow localhost | on | **turn off** |
+| Email provider | Neon shared sender | **Custom SMTP** before real use (see below) |
+| Application name | set (appears in emails) | set |
+
+Why these matter:
+
+- The app only asks Neon to send magic links to allowlisted addresses. Password sign-up and Google sign-in can still be called directly against the branch's Auth URL, bypassing this app. Leaving password sign-up on would let someone create a password account for an admin's address before that admin first signs in. The app blocks both routes through its own proxy, but turn them off in Neon as well.
+- Vercel Preview uses the `development` branch, so preview origins belong on `development`'s trusted domains, never on `production`'s.
+
+`development` was branched from `production`, so its copy of `neon_auth.project_config` carries production's config id. Afterwards, `neon neon-auth plugins list --branch production` returned `development`'s settings, while production's own database and Auth endpoint still had the old ones. Until that is resolved, check production's Auth settings in the Console, and confirm them with a request to production's Auth URL (for example, a password sign-in should return `EMAIL_PASSWORD_DISABLED`). Do not rely on the CLI's read-back for production.
 
 ### Magic-link email delivery
 
 Neon Auth sends magic-link emails itself. No email code or email package is in this repo.
 
 - **Development:** Neon's shared sender (`auth@mail.myneon.app`) works with no setup, but it is rate-limited.
-- **Production:** Neon's production checklist says to use your own email provider, and the Magic Link docs say the shared sender should only be used during development. Configure one under **Settings > Auth > Custom SMTP provider** (host, port, username, password, sender email, sender name). Any SMTP service works (for example Resend, Postmark or SES). This is a manual step with an external account, and it is not done yet.
+- **Production:** Neon's production checklist says to use your own email provider, and the Magic Link docs say the shared sender should only be used during development. Configure one per branch in the Console's Auth settings, or with `neon neon-auth config email-provider` (host, port, username, password, sender email, sender name). Any SMTP service works (for example Resend, Postmark or SES). This is a manual step with an external account, and it is not done yet.
 
 ## Database migrations
 
@@ -85,13 +122,17 @@ npm run db:generate   # after changing lib/db/schema.ts; writes SQL to drizzle/
 npm run db:migrate    # applies pending migrations to DATABASE_URL
 ```
 
-`db:migrate` reads `.env.local`. Neon recommends the direct (non-pooled) connection string for migrations. To use it, prefix the command:
+`db:migrate` reads `.env.local`. Neon recommends the direct (non-pooled) connection string for migrations, which `neon env pull` writes as `DATABASE_URL_UNPOOLED`:
 
 ```bash
-DATABASE_URL="postgresql://...direct-host.../neondb?sslmode=require" npm run db:migrate
+# development (what .env.local points at)
+DATABASE_URL="$(grep '^DATABASE_URL_UNPOOLED=' .env.local | cut -d= -f2-)" npm run db:migrate
+
+# production: fetch the direct string into the command only, never into a file
+DATABASE_URL="$(neon connection-string production --project-id wild-cloud-37283675)" npm run db:migrate
 ```
 
-Run migrations against each branch (dev, preview, production) before the code that needs them is deployed. Vercel builds do not run migrations.
+Run migrations against both branches (`development`, `production`) before the code that needs them is deployed. Vercel builds do not run migrations. `drizzle-kit migrate` records applied migrations in its own `drizzle.__drizzle_migrations` table, so a rerun is a no-op.
 
 The only table so far is `app_meta` (key/value). The admin page queries it to show whether the database is reachable and migrated.
 
@@ -128,7 +169,7 @@ Playwright never talks to Neon and never sends email. `playwright.config.ts` sta
 
 The app code is identical to production. Only its configuration differs, so the tests do not weaken production auth. They cover: anonymous redirects, the login form, allowlisted and non-allowlisted magic-link requests, redirect-target overriding, blocked password endpoints, denied access for unapproved or unverified sessions, and admin access and sign-out. Neon Auth has no official offline test mode, so the mock takes its place.
 
-What the mock cannot prove is real email delivery and Neon's link verification. Check that by hand on the `dev` branch after setup:
+What the mock cannot prove is real email delivery and Neon's link verification. Check that by hand on the `development` branch after setup:
 
 1. Request a link for an allowlisted address. It arrives, and following it lands on `/admin` signed in.
 2. Request a link for a non-allowlisted address. Nothing is sent.
@@ -136,16 +177,26 @@ What the mock cannot prove is real email delivery and Neon's link verification. 
 
 ### CI
 
-`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: install, lint, typecheck, unit tests, production build, Playwright. It caches npm, `.next/cache` and the Playwright browser. It uses dummy environment values and needs no secrets. No tests need a live database or live Neon Auth yet. When they do, put them in a separate job that reads secrets pointing at a dedicated Neon test branch, and keep this job offline.
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: install, lint, typecheck, unit tests, production build, Playwright. It caches npm, `.next/cache` and the Playwright browser. It uses dummy environment values and needs no secrets. No tests need a live database or live Neon Auth yet. When they do, put them in a separate job that reads secrets pointing at the `development` branch (never `production`), and keep this job offline.
 
 ## Deploying on Vercel (manual)
 
+Not connected yet. When it is:
+
 1. Push this repo to GitHub.
 2. In Vercel, **Add New > Project**, import the repo. The framework preset is Next.js. No build settings need changing.
-3. In **Settings > Environment Variables**, add all four variables separately for Production, Preview and Development, using the branch mapping above. Mark `DATABASE_URL` and `NEON_AUTH_COOKIE_SECRET` as sensitive.
-4. If you use the Neon integration from the Vercel Marketplace instead of pasting `DATABASE_URL` yourself, check which branch each environment points to, and make sure `NEON_AUTH_BASE_URL` belongs to that same branch. Do not turn on per-deployment preview branches yet. Each would get its own Auth URL, which this setup does not wire up.
-5. Add your production domain to Neon Auth's trusted domains (step 6 of Neon setup).
-6. Run `npm run db:migrate` against the production branch before the first production deploy.
+3. In **Settings > Environment Variables**, set each Vercel environment as below. Mark `DATABASE_URL` and `NEON_AUTH_COOKIE_SECRET` as sensitive.
+
+   | Vercel environment | Neon branch | `DATABASE_URL` | `NEON_AUTH_BASE_URL` | `NEON_AUTH_COOKIE_SECRET` | `ADMIN_EMAILS` |
+   | --- | --- | --- | --- | --- | --- |
+   | Development | `development` | `development` pooled string | `development` Auth URL | random value A | admin list |
+   | Preview | `development` | `development` pooled string | `development` Auth URL | random value A (same as Development) or its own | admin list |
+   | Production | `production` | `production` pooled string | `production` Auth URL | its own random value, never reused | admin list |
+
+   Get each branch's Neon values with `neon env pull --branch <name> --file <scratch file>`, copy them into Vercel, then delete the scratch file. `DATABASE_URL_UNPOOLED`, `NEON_BRANCH` and `NEON_AUTH_JWKS_URL` are not needed in Vercel.
+4. If you use the Neon integration from the Vercel Marketplace instead of pasting values, point Development and Preview at `development` and Production at `production`, and make sure `NEON_AUTH_BASE_URL` comes from the same branch as `DATABASE_URL`. Do not turn on per-deployment preview branches. Each would get its own database and Auth URL.
+5. Before the first preview, add the Vercel preview wildcard to `development`'s trusted domains. Before the first production deploy, add the production domain to `production`'s trusted domains (see "Auth settings per branch").
+6. Run `npm run db:migrate` against `production` before the first production deploy.
 
 ## Security defaults
 
@@ -172,5 +223,6 @@ lib/env/                 environment validation
 drizzle/                 generated SQL migrations
 e2e/                     Playwright tests and the Neon Auth mock
 instrumentation.ts       validates env when the server starts
+neon.ts                  Neon services for each branch (Neon Auth)
 proxy.ts                 early redirect for /admin (Next.js 16 name for middleware)
 ```

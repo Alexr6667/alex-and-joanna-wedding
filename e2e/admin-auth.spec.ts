@@ -81,6 +81,27 @@ test.describe("login page", () => {
   });
 });
 
+test.describe("following a magic link", () => {
+  // After verifying the emailed link, Neon Auth redirects to the callback URL
+  // with a one-time verifier. This is the address the browser lands on.
+  test("signs an approved admin in and lands on /admin", async ({ page }) => {
+    await page.goto("/admin?neon_auth_session_verifier=ml-approved-admin");
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByText(`Signed in as ${APPROVED_ADMIN_EMAIL}`)).toBeVisible();
+
+    // The session survives a reload.
+    await page.reload();
+    await expect(page.getByText(`Signed in as ${APPROVED_ADMIN_EMAIL}`)).toBeVisible();
+  });
+
+  test("an unknown or used verifier shows the invalid-link message", async ({ page }) => {
+    await page.goto("/admin?neon_auth_session_verifier=ml-not-a-real-verifier");
+    await expect(page).toHaveURL(/\/admin\/login\?error=link$/);
+    await expect(page.getByText("That sign-in link is invalid or has expired")).toBeVisible();
+    await expect(page.getByLabel("Email address")).toBeVisible();
+  });
+});
+
 test.describe("auth API proxy", () => {
   test("overrides caller-supplied redirect targets", async ({ request }) => {
     const response = await request.post("/api/auth/sign-in/magic-link", {

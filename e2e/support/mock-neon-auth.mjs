@@ -14,6 +14,13 @@ const sessions = {
   "unverified-admin": { email: "alex@example.com", emailVerified: false },
 };
 
+// One-time verifiers Neon appends to the callback URL after a magic link is
+// clicked (`neon_auth_session_verifier=ml-...`). Real Neon exchanges one on
+// get-session without any challenge cookie: it returns the session and sets the
+// session cookie. Used verifiers are removed, like the real single-use ones.
+const DEFAULT_VERIFIERS = { "ml-approved-admin": "approved-admin" };
+let verifiers = { ...DEFAULT_VERIFIERS };
+
 let magicLinkRequests = [];
 
 function sessionPayload(token, { email, emailVerified }) {
@@ -71,9 +78,19 @@ const server = createServer(async (req, res) => {
       return send(res, 200, magicLinkRequests);
     case "DELETE /__test/magic-link-requests":
       magicLinkRequests = [];
+      verifiers = { ...DEFAULT_VERIFIERS };
       return send(res, 200, { ok: true });
 
     case `GET ${BASE_PATH}/get-session`: {
+      const verifier = url.searchParams.get("neon_auth_session_verifier");
+      if (verifier) {
+        const token = verifiers[verifier];
+        delete verifiers[verifier];
+        if (!token) return send(res, 200, null);
+        return send(res, 200, sessionPayload(token, sessions[token]), {
+          "set-cookie": `${SESSION_COOKIE}=${token}; Path=/; Max-Age=3600; HttpOnly; Secure; SameSite=Lax`,
+        });
+      }
       const token = readSessionToken(req);
       const user = token ? sessions[token] : undefined;
       return send(res, 200, user ? sessionPayload(token, user) : null);

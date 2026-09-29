@@ -44,3 +44,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.mcp.json
+.neon
+
+# local agent skills
+.claude/skills/
+skills-lock.json
