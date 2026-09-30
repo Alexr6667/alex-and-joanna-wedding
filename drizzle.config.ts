@@ -11,7 +11,10 @@ export default defineConfig({
   // Only manage the application schema. Neon Auth owns neon_auth.
   schemaFilter: ["public"],
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "",
+    // .env.local stores values in double quotes, and copying one out with
+    // grep/cut keeps them. node-postgres would read a quoted URL as a
+    // different host, so strip a surrounding pair of quotes.
+    url: (process.env.DATABASE_URL ?? "").replace(/^(["'])(.*)\1$/, "$2"),
   },
   strict: true,
   verbose: true,

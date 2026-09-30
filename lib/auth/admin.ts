@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { env } from "@/lib/env";
 import { isAllowlistedEmail } from "./admin-allowlist";
-import { ADMIN_LOGIN_PATH } from "./routes";
+import { ADMIN_HOME_PATH, ADMIN_LOGIN_PATH } from "./routes";
 import { auth } from "./server";
 
 export type AdminAccess =
@@ -33,4 +33,34 @@ export async function requireSignedIn(): Promise<Exclude<AdminAccess, { status: 
   const access = await getAdminAccess();
   if (access.status === "anonymous") redirect(ADMIN_LOGIN_PATH);
   return access;
+}
+
+/**
+ * Gate for every admin page other than /admin itself. Anonymous visitors go to
+ * the login page; signed-in users who are not approved go to /admin, which
+ * shows "Access denied". Returns the admin's email.
+ */
+export async function requireAdmin(): Promise<string> {
+  const access = await getAdminAccess();
+  if (access.status === "anonymous") redirect(ADMIN_LOGIN_PATH);
+  if (access.status === "forbidden") redirect(ADMIN_HOME_PATH);
+  return access.email;
+}
+
+export class AdminAuthorizationError extends Error {
+  constructor() {
+    super("Admin access required");
+    this.name = "AdminAuthorizationError";
+  }
+}
+
+/**
+ * Gate for admin Server Actions and route handlers, which can be called
+ * directly without going through a page. Throws unless the caller is an
+ * approved admin.
+ */
+export async function assertAdmin(): Promise<string> {
+  const access = await getAdminAccess();
+  if (access.status !== "admin") throw new AdminAuthorizationError();
+  return access.email;
 }

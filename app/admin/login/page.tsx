@@ -9,7 +9,7 @@ import { LoginForm } from "./login-form";
 const SESSION_VERIFIER_PARAM = "neon_auth_session_verifier";
 
 export const metadata: Metadata = {
-  title: "Admin sign in | Alex & Joanna",
+  title: "Admin sign in",
   robots: { index: false, follow: false },
 };
 

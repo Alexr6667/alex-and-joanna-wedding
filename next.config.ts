@@ -12,8 +12,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
-      // RSVP URLs will carry a guest's private token, so never leak them in Referer.
-      { source: "/rsvp/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      // Invitation URLs carry a guest's private token, so never leak them in Referer.
+      { source: "/invite/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
   },
 };
