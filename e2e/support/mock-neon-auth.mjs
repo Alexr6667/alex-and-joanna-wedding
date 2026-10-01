@@ -10,6 +10,7 @@ const SESSION_COOKIE = "__Secure-neon-auth.session_token";
 // Session tokens the tests can put in the browser, and who they belong to.
 const sessions = {
   "approved-admin": { email: "alex@example.com", emailVerified: true },
+  "second-admin": { email: "joanna@example.com", emailVerified: true },
   "unapproved-user": { email: "guest@example.com", emailVerified: true },
   "unverified-admin": { email: "alex@example.com", emailVerified: false },
 };

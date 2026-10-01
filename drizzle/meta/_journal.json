@@ -8,6 +8,27 @@
       "when": 1790704495288,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790717326143,
+      "tag": "0001_guests_rsvps_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790717329784,
+      "tag": "0002_seed_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790796261822,
+      "tag": "0003_guest_import_previews",
+      "breakpoints": true
     }
   ]
 }

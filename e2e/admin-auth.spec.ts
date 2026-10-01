@@ -1,23 +1,5 @@
-import { expect, test, type BrowserContext } from "@playwright/test";
+import { expect, signInAs, test } from "./support/fixtures";
 import { APPROVED_ADMIN_EMAIL, MOCK_AUTH_URL } from "./support/test-env";
-
-// Auth runs against e2e/support/mock-neon-auth.mjs. It accepts a few fixed
-// session tokens, so tests can be "signed in" without sending real email.
-type MockSession = "approved-admin" | "unapproved-user" | "unverified-admin";
-
-async function signInAs(context: BrowserContext, token: MockSession) {
-  await context.addCookies([
-    {
-      name: "__Secure-neon-auth.session_token",
-      value: token,
-      domain: "localhost",
-      path: "/",
-      httpOnly: true,
-      secure: true,
-      sameSite: "Lax",
-    },
-  ]);
-}
 
 type MagicLinkRequest = { email: string; callbackURL: string; errorCallbackURL: string };
 
@@ -142,10 +124,9 @@ test.describe("signed-in users", () => {
   test("an approved admin can open /admin and sign out", async ({ page, context }) => {
     await signInAs(context, "approved-admin");
     await page.goto("/admin");
-    await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
     await expect(page.getByText(`Signed in as ${APPROVED_ADMIN_EMAIL}`)).toBeVisible();
-    // CI has no database, so the status check reports it as unavailable.
-    await expect(page.getByTestId("database-status")).toBeVisible();
+    await expect(page.getByTestId("database-status")).toHaveText("Database connected and migrations applied.");
 
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/admin\/login$/);

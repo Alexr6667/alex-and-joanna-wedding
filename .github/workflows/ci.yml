@@ -17,9 +17,25 @@ jobs:
     name: Lint, typecheck, test, build, e2e
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      # Throwaway Postgres for Playwright. The suite migrates and wipes it; it
+      # never talks to Neon. Matches the defaults in e2e/support/test-env.ts.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wedding_e2e
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       # Offline CI: dummy values that pass validation. No Neon secrets are
-      # needed. Playwright overrides these at runtime with e2e/support/test-env.ts.
+      # needed. Playwright overrides these at runtime with e2e/support/test-env.ts,
+      # which points DATABASE_URL at the postgres service above.
       DATABASE_URL: postgresql://ci:ci@db.invalid/neondb?sslmode=require
       NEON_AUTH_BASE_URL: http://127.0.0.1:4010/neondb/auth
       NEON_AUTH_COOKIE_SECRET: ci-only-cookie-secret-not-used-anywhere-else

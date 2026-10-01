@@ -5,6 +5,9 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Vitest owns *.test.ts (including e2e/support/*.test.ts); Playwright runs only specs.
+  testMatch: "**/*.spec.ts",
+  globalSetup: "./e2e/support/global-setup.ts",
   fullyParallel: false,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
@@ -31,7 +34,9 @@ export default defineConfig({
       command: isCI
         ? `npm run start -- --port ${APP_PORT}`
         : `npm run build && npm run start -- --port ${APP_PORT}`,
-      url: `http://localhost:${APP_PORT}`,
+      // A page that doesn't touch the database: globalSetup prepares the
+      // database only after the web servers are up.
+      url: `http://localhost:${APP_PORT}/invitation-not-found`,
       env: testEnv,
       timeout: 180_000,
       reuseExistingServer: false,
